@@ -13,13 +13,25 @@ import (
 	"github.com/knq/ini"
 )
 
+const (
+	// DefaultVarName is the default variable name to read the configuration
+	// from.
+	DefaultVarName = "APP_CONFIG"
+
+	// DefaultConfigFile is the default config file path to read the
+	// configuration from.
+	DefaultConfigFile = "env/config"
+)
+
+// Filter is a filter that modifies a key returned from the envcfg.
 type Filter func(*Envcfg, string) string
 
-// Envcfg
+// Envcfg is config loaded from the environment.
 type Envcfg struct {
+	config *ini.File
+
 	envVarName string
 	configFile string
-	config     *ini.File
 
 	filters map[string]Filter
 }
@@ -30,8 +42,8 @@ func New(opts ...Option) (*Envcfg, error) {
 
 	// default values
 	ec := &Envcfg{
-		envVarName: "APP_CONFIG",
-		configFile: "env/config",
+		envVarName: DefaultVarName,
+		configFile: DefaultConfigFile,
 		filters:    make(map[string]Filter),
 	}
 
@@ -40,9 +52,9 @@ func New(opts ...Option) (*Envcfg, error) {
 		o(ec)
 	}
 
-	// load environment data from $ENV{$envVarName} or from file $PWD/$configFile
+	// load environment data from $ENV{$envVarName} or from file $configFile
 	if envdata := os.Getenv(ec.envVarName); envdata != "" {
-		// if the data is supplied in the $ENV, then base64 decode the data
+		// if the data is supplied in $ENV{$envVarName}, then base64 decode the data
 		var data []byte
 		data, err = base64.StdEncoding.DecodeString(envdata)
 		if err == nil {
@@ -82,13 +94,13 @@ var envValRegexp = regexp.MustCompile(`(?i)^\$([a-z][a-z0-9_]*)\|\|(.+)$`)
 func (ec *Envcfg) GetKey(key string) string {
 	val := ec.config.GetKey(key)
 
-	// check if its $NAME is present
+	// check if config data is like "$NAME||default"
 	matches := envValRegexp.FindStringSubmatch(val)
 	if len(matches) == 3 {
-		// has $NAME, so look at ENV{$NAME}
+		// config data has $NAME, so read $ENV{$NAME}
 		v := os.Getenv(matches[1])
 
-		// if empty value, use the default value
+		// if empty value, use the default
 		if v == "" {
 			val = matches[2]
 		} else {
@@ -96,10 +108,54 @@ func (ec *Envcfg) GetKey(key string) string {
 		}
 	}
 
-	// apply key value filter
+	// apply filter
 	if f, ok := ec.filters[key]; ok {
 		return f(ec, val)
 	}
 
 	return val
+}
+
+// GetString retrieves a key from the environment or the supplied configuration
+// data and returns it as a string.
+//
+// Alias for GetKey
+func (ec *Envcfg) GetString(key string) string {
+	return ec.GetKey(key)
+}
+
+// GetBool retrieves a key from the environment, or the supplied configuration
+// data and returns it as a bool.
+func (ec *Envcfg) GetBool(key string) bool {
+	b, _ := strconv.ParseBool(ec.GetKey(key))
+	return b
+}
+
+// GetFloat retrieves a key from the environment, or the supplied configuration
+// data and returns it as a float64. Uses bitSize as the precision.
+func (ec *Envcfg) GetFloat(key string, bitSize int) float64 {
+	f, _ := strconv.ParseFloat(ec.GetKey(key), bitSize)
+	return f
+}
+
+// GetInt64 retrieves a key from the environment, or the supplied configuration
+// data and returns it as a int64. Uses base and bitSize to parse.
+func (ec *Envcfg) GetInt64(key string, base, bitSize int) int64 {
+	i, _ := strconv.ParseInt(ec.GetKey(key), base, bitSize)
+	return i
+}
+
+// GetUint64 retrieves a key from the environment, or the supplied configuration
+// data and returns it as a uint64. Uses base and bitSize to parse.
+func (ec *Envcfg) GetUint64(key string, base, bitSize int) uint64 {
+	u, _ := strconv.ParseUint(ec.GetKey(key), base, bitSize)
+	return u
+}
+
+// GetInt retrieves a key from the environment, or the supplied configuration
+// data and returns it as a int. Expects numbers to be base 10 and no larger
+// than 32 bits.
+func (ec *Envcfg) GetInt(key string) int {
+	i, _ := strconv.Atoi(ec.GetKey(key))
+	return i
 }
