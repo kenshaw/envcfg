@@ -6,6 +6,7 @@ package envcfg
 import (
 	"bytes"
 	"encoding/base64"
+	"io/ioutil"
 	"os"
 	"regexp"
 	"strconv"
@@ -96,11 +97,16 @@ var nameRE = regexp.MustCompile(`(?i)^\$([a-z][a-z0-9_]*)$`)
 //
 // When the initial value read from the config file or the supplied app
 // environment variable is in the form of "$NAME||<default>" or
-// "$NAME||<default>||base64". Then the value will be read from from the system
+// "$NAME||<default>||<encoding>". Then the value will be read from from the system
 // environment variable $NAME. If that value is empty, then the <default> value
-// will be returned instead. If the third, optional parameter base64 is
+// will be returned instead. If the third, optional parameter is
 // supplied then the environment variable value (or the default value) will be
-// base64 decoded before being returned.
+// decoded using the appropriate method.
+//
+// Current supported <encoding> parameters:
+//
+// base64 -- value should be base64 decoded
+// file   -- value should be read from disk
 func (ec *Envcfg) GetKey(key string) string {
 	val := ec.config.GetKey(key)
 
@@ -116,9 +122,17 @@ func (ec *Envcfg) GetKey(key string) string {
 			val = v
 		}
 
-		if len(m) == 3 && m[2] == "base64" {
-			if buf, err := base64.StdEncoding.DecodeString(val); err == nil {
-				val = string(buf)
+		if len(m) == 3 {
+			switch m[2] {
+			case "base64":
+				if buf, err := base64.StdEncoding.DecodeString(val); err == nil {
+					val = string(buf)
+				}
+
+			case "file":
+				if buf, err := ioutil.ReadFile(val); err == nil {
+					val = string(buf)
+				}
 			}
 		}
 	}
