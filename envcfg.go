@@ -113,7 +113,7 @@ func (ec *Envcfg) GetKey(key string) string {
 	m := strings.Split(val, "||")
 	if (len(m) == 2 || len(m) == 3) && nameRE.MatchString(m[0]) {
 		// config data has $NAME, so read $ENV{$NAME}
-		v := os.Getenv(m[0])
+		v := os.Getenv(m[0][1:])
 
 		// if empty value, use the default
 		if v == "" {
