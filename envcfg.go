@@ -5,12 +5,16 @@ package envcfg
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"io/ioutil"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/knq/ini"
 )
@@ -23,6 +27,18 @@ const (
 	// DefaultConfigFile is the default file path to load the initial
 	// configuration data from.
 	DefaultConfigFile = "env/config"
+
+	// DefaultEnvKey is the default runtime environment key.
+	DefaultEnvKey = "runtime.environment"
+
+	// DefaultHostKey is the default server hostname key.
+	DefaultHostKey = "server.host"
+
+	// DefaultPortKey is the default server port key.
+	DefaultPortKey = "server.port"
+
+	// DefaultCertPathKey is the default server certificate path key.
+	DefaultCertPathKey = "server.certs"
 )
 
 // Filter is a func type that modifies a key returned from the envcfg.
@@ -36,7 +52,16 @@ type Envcfg struct {
 	envVarName string
 	configFile string
 
+	envKey      string
+	hostKey     string
+	portKey     string
+	certPathKey string
+
+	tls *tls.Config
+
 	filters map[string]Filter
+
+	rw sync.Mutex
 }
 
 // New creates a new environment configuration loader.
@@ -45,9 +70,13 @@ func New(opts ...Option) (*Envcfg, error) {
 
 	// default values
 	ec := &Envcfg{
-		envVarName: DefaultVarName,
-		configFile: DefaultConfigFile,
-		filters:    make(map[string]Filter),
+		envVarName:  DefaultVarName,
+		configFile:  DefaultConfigFile,
+		envKey:      DefaultEnvKey,
+		hostKey:     DefaultHostKey,
+		portKey:     DefaultPortKey,
+		certPathKey: DefaultCertPathKey,
+		filters:     make(map[string]Filter),
 	}
 
 	// apply options
@@ -189,4 +218,61 @@ func (ec *Envcfg) GetUint64(key string, base, bitSize int) uint64 {
 func (ec *Envcfg) GetInt(key string) int {
 	i, _ := strconv.Atoi(ec.GetKey(key))
 	return i
+}
+
+// Env retrieves the value for the runtime environment key.
+func (ec *Envcfg) Env() string {
+	return ec.GetKey(ec.envKey)
+}
+
+// Host retrieves the value for the server host key.
+func (ec *Envcfg) Host() string {
+	return ec.GetKey(ec.hostKey)
+}
+
+// Port retrieves the value for the server port key.
+func (ec *Envcfg) Port() int {
+	return ec.GetInt(ec.portKey)
+}
+
+// CertPath retrieves the value for the server certificate path key.
+func (ec *Envcfg) CertPath() string {
+	return ec.GetKey(ec.certPathKey)
+}
+
+// TLS retrieves the TLS configuration.
+func (ec *Envcfg) TLS() *tls.Config {
+	ec.rw.Lock()
+	defer ec.rw.Unlock()
+
+	if ec.tls == nil {
+		host := ec.Host()
+
+		// setup letsencrypt autocert manager
+		autocertManager := autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist(host),
+			Cache:      autocert.DirCache(ec.CertPath()),
+		}
+
+		ec.tls = &tls.Config{
+			NextProtos:     []string{"h2", "http/1.1"},
+			ServerName:     host,
+			GetCertificate: autocertManager.GetCertificate,
+
+			// qualys A+ settings
+			MinVersion:               tls.VersionTLS12,
+			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+			PreferServerCipherSuites: true,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			},
+		}
+	}
+
+	return ec.tls
 }

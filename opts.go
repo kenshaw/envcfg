@@ -24,3 +24,31 @@ func KeyFilter(key string, f Filter) Option {
 		ec.filters[key] = f
 	}
 }
+
+// EnvKey is an option that sets the runtime environment key.
+func EnvKey(key string) Option {
+	return func(ec *Envcfg) {
+		ec.envKey = key
+	}
+}
+
+// HostKey is an option that sets the server host key.
+func HostKey(key string) Option {
+	return func(ec *Envcfg) {
+		ec.hostKey = key
+	}
+}
+
+// PortKey is an option that sets the server port key.
+func PortKey(key string) Option {
+	return func(ec *Envcfg) {
+		ec.portKey = key
+	}
+}
+
+// CertPathKey is an option that sets the server certificate path key.
+func CertPathKey(key string) Option {
+	return func(ec *Envcfg) {
+		ec.certPathKey = key
+	}
+}
