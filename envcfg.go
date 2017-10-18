@@ -5,6 +5,7 @@ package envcfg
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"io/ioutil"
@@ -15,7 +16,11 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/oauth2"
 
+	"github.com/brankas/autocertdns"
+	"github.com/brankas/autocertdns/godop"
+	"github.com/digitalocean/godo"
 	"github.com/knq/ini"
 )
 
@@ -39,7 +44,15 @@ const (
 
 	// DefaultCertPathKey is the default server certificate path key.
 	DefaultCertPathKey = "server.certs"
+
+	// DefaultCertProviderKey is the default server certificate provider key.
+	DefaultCertProviderKey = "server.certProvider"
 )
+
+// CertificateProvider is the common interface for certificate providers.
+type CertificateProvider interface {
+	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
+}
 
 // Filter is a func type that modifies a key returned from the envcfg.
 type Filter func(*Envcfg, string) string
@@ -52,16 +65,17 @@ type Envcfg struct {
 	envVarName string
 	configFile string
 
-	envKey      string
-	hostKey     string
-	portKey     string
-	certPathKey string
+	envKey          string
+	hostKey         string
+	portKey         string
+	certPathKey     string
+	certProviderKey string
 
 	tls *tls.Config
 
 	filters map[string]Filter
 
-	rw sync.Mutex
+	sync.Mutex
 }
 
 // New creates a new environment configuration loader.
@@ -70,13 +84,14 @@ func New(opts ...Option) (*Envcfg, error) {
 
 	// default values
 	ec := &Envcfg{
-		envVarName:  DefaultVarName,
-		configFile:  DefaultConfigFile,
-		envKey:      DefaultEnvKey,
-		hostKey:     DefaultHostKey,
-		portKey:     DefaultPortKey,
-		certPathKey: DefaultCertPathKey,
-		filters:     make(map[string]Filter),
+		envVarName:      DefaultVarName,
+		configFile:      DefaultConfigFile,
+		envKey:          DefaultEnvKey,
+		hostKey:         DefaultHostKey,
+		portKey:         DefaultPortKey,
+		certPathKey:     DefaultCertPathKey,
+		certProviderKey: DefaultCertProviderKey,
+		filters:         make(map[string]Filter),
 	}
 
 	// apply options
@@ -240,25 +255,74 @@ func (ec *Envcfg) CertPath() string {
 	return ec.GetKey(ec.certPathKey)
 }
 
+// AutocertManager returns an autocert.Manager.
+func (ec *Envcfg) AutocertManager() *autocert.Manager {
+	// setup letsencrypt autocert manager
+	return &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(ec.Host()),
+		Cache:      autocert.DirCache(ec.CertPath()),
+	}
+}
+
+// AutocertDNSManager returns an autocertdns.Manager.
+func (ec *Envcfg) AutocertDNSManager(email string, provisioner autocertdns.Provisioner) *autocertdns.Manager {
+	return &autocertdns.Manager{
+		Prompt:      autocert.AcceptTOS,
+		Domain:      ec.Host(),
+		Email:       "admin@" + ec.Host(),
+		CacheDir:    ec.CertPath(),
+		Provisioner: provisioner,
+	}
+}
+
+// CertProvider returns the configured certificate provider.
+func (ec *Envcfg) CertProvider() CertificateProvider {
+	provider := ec.GetString(ec.certProviderKey)
+	var params []string
+	if i := strings.Index(provider, ":"); i != -1 {
+		provider, params = strings.TrimSpace(provider[:i]), strings.Split(provider[i+1:], ":oeu")
+	}
+
+	if provider == "" || provider == "auto" {
+		return ec.AutocertManager()
+	}
+
+	if provider != "dns" {
+		panic("unknown certificate provider type")
+	}
+
+	// "typ:domain:email:token"
+	if len(params) < 4 {
+		panic("invalid certificate provider params")
+	}
+
+	var provisioner autocertdns.Provisioner
+	switch params[0] {
+	case "godo", "godop", "do", "digitalocean":
+		provisioner = godop.New(godoClient(context.Background(), params[3]), params[1])
+
+	default:
+		panic("invalid certificate provisioner type")
+	}
+
+	return ec.AutocertDNSManager(params[2], provisioner)
+}
+
 // TLS retrieves the TLS configuration.
-func (ec *Envcfg) TLS() *tls.Config {
-	ec.rw.Lock()
-	defer ec.rw.Unlock()
+func (ec *Envcfg) TLS(certProvider CertificateProvider) *tls.Config {
+	if certProvider == nil {
+		certProvider = ec.CertProvider()
+	}
+
+	ec.Lock()
+	defer ec.Unlock()
 
 	if ec.tls == nil {
-		host := ec.Host()
-
-		// setup letsencrypt autocert manager
-		autocertManager := autocert.Manager{
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(host),
-			Cache:      autocert.DirCache(ec.CertPath()),
-		}
-
 		ec.tls = &tls.Config{
 			NextProtos:     []string{"h2", "http/1.1"},
-			ServerName:     host,
-			GetCertificate: autocertManager.GetCertificate,
+			ServerName:     ec.Host(),
+			GetCertificate: certProvider.GetCertificate,
 
 			// qualys A+ settings
 			MinVersion:               tls.VersionTLS12,
@@ -275,4 +339,17 @@ func (ec *Envcfg) TLS() *tls.Config {
 	}
 
 	return ec.tls
+}
+
+// godoClient creates a godo.Client using the supplied context and access
+// token.
+func godoClient(ctxt context.Context, token string) *godo.Client {
+	return godo.NewClient(oauth2.NewClient(
+		ctxt,
+		oauth2.StaticTokenSource(
+			&oauth2.Token{
+				AccessToken: token,
+			},
+		),
+	))
 }
