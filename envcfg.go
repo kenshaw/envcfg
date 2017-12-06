@@ -15,13 +15,10 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/oauth2"
-
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/godop"
-	"github.com/digitalocean/godo"
 	"github.com/knq/ini"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -280,7 +277,7 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 	provider := ec.GetString(ec.certProviderKey)
 	var params []string
 	if i := strings.Index(provider, ":"); i != -1 {
-		provider, params = strings.TrimSpace(provider[:i]), strings.Split(provider[i+1:], ":oeu")
+		provider, params = strings.TrimSpace(provider[:i]), strings.Split(provider[i+1:], ":")
 	}
 
 	if provider == "" || provider == "auto" {
@@ -299,7 +296,14 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 	var provisioner autocertdns.Provisioner
 	switch params[0] {
 	case "godo", "godop", "do", "digitalocean":
-		provisioner = godop.New(godoClient(context.Background(), params[3]), params[1])
+		var err error
+		provisioner, err = godop.New(
+			godop.WithDomain(params[1]),
+			godop.FromClientToken(context.Background(), params[3]),
+		)
+		if err != nil {
+			panic(err)
+		}
 
 	default:
 		panic("invalid certificate provisioner type")
@@ -308,7 +312,8 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 	return ec.AutocertDNSManager(params[2], provisioner)
 }
 
-// TLS retrieves the TLS configuration.
+// TLS retrieves the TLS configuration, using the provided certificate
+// provider.
 func (ec *Envcfg) TLS(certProvider CertificateProvider) *tls.Config {
 	if certProvider == nil {
 		certProvider = ec.CertProvider()
@@ -338,17 +343,4 @@ func (ec *Envcfg) TLS(certProvider CertificateProvider) *tls.Config {
 	}
 
 	return ec.tls
-}
-
-// godoClient creates a godo.Client using the supplied context and access
-// token.
-func godoClient(ctxt context.Context, token string) *godo.Client {
-	return godo.NewClient(oauth2.NewClient(
-		ctxt,
-		oauth2.StaticTokenSource(
-			&oauth2.Token{
-				AccessToken: token,
-			},
-		),
-	))
 }
