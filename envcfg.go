@@ -148,9 +148,8 @@ var nameRE = regexp.MustCompile(`(?i)^\$([a-z][a-z0-9_]*)$`)
 // decoded using the appropriate method.
 //
 // Current supported <encoding> parameters:
-//
-// base64 -- value should be base64 decoded
-// file   -- value should be read from disk
+//     base64 -- value should be base64 decoded
+//     file   -- value should be read from disk
 func (ec *Envcfg) GetKey(key string) string {
 	val := ec.config.GetKey(key)
 
