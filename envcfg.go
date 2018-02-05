@@ -298,8 +298,8 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 	case "godo", "godop", "do", "digitalocean":
 		var err error
 		provisioner, err = godop.New(
-			godop.WithDomain(params[1]),
-			godop.FromClientToken(context.Background(), params[3]),
+			godop.Domain(params[1]),
+			godop.GodoClientToken(context.Background(), params[3]),
 		)
 		if err != nil {
 			panic(err)
