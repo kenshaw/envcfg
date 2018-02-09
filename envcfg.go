@@ -9,7 +9,9 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"io/ioutil"
+	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/godop"
+	"github.com/fsnotify/fsnotify"
 	"github.com/knq/ini"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -280,19 +283,23 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 		provider, params = strings.TrimSpace(provider[:i]), strings.Split(provider[i+1:], ":")
 	}
 
-	if provider == "" || provider == "auto" {
+	switch provider {
+	case "", "auto":
 		return ec.AutocertManager()
+	case "dns":
+		return ec.dnsCertProvider(params)
+	case "disk":
+		return ec.diskCertProvider(params)
+	default:
+		panic("unknown certificate provider type: " + provider)
 	}
+}
 
-	if provider != "dns" {
-		panic("unknown certificate provider type")
-	}
-
+func (ec *Envcfg) dnsCertProvider(params []string) CertificateProvider {
 	// "typ:domain:email:token"
 	if len(params) < 4 {
 		panic("invalid certificate provider params")
 	}
-
 	var provisioner autocertdns.Provisioner
 	switch params[0] {
 	case "godo", "godop", "do", "digitalocean":
@@ -310,6 +317,99 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 	}
 
 	return ec.AutocertDNSManager(params[2], provisioner)
+}
+
+// diskCertProvider loads a tls keypair from disk, and uses fsnotify to
+// watch for changes to reload immediately.
+func (ec *Envcfg) diskCertProvider(params []string) CertificateProvider {
+	// "certname:keyname"
+	if len(params) < 2 {
+		panic("invalid certificate provider params")
+	}
+	kpr, err := newKeypairReloader(ec.CertPath(), params[0], params[1])
+	if err != nil {
+		log.Println("could not set up:", err)
+	}
+	return kpr
+}
+
+type keypairReloader struct {
+	certMu   sync.RWMutex
+	cert     *tls.Certificate
+	certPath string
+	keyPath  string
+}
+
+func newKeypairReloader(dirPath, cert, key string) (*keypairReloader, error) {
+	certPath := filepath.Join(dirPath, cert)
+	keyPath := filepath.Join(dirPath, key)
+	r := &keypairReloader{
+		certPath: certPath,
+		keyPath:  keyPath,
+	}
+	if err := r.tryReload(); err != nil {
+		return nil, err
+	}
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	addWatch := func(path string) error {
+		if err := watcher.Add(certPath); err != nil {
+			return err
+		}
+		// if this is a valid symlink, watch its target too
+		if path, err := filepath.EvalSymlinks(certPath); err == nil && path != certPath {
+			if err := watcher.Add(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// don't close, as it runs forever
+	// defer watcher.Close()
+	go func() {
+		for {
+			select {
+			case <-watcher.Events:
+				if err := r.tryReload(); err != nil {
+					log.Println("could not update:", err)
+				} else {
+					log.Println("updated certificate")
+				}
+				// in case we're dealing with symlinks
+				// and the target changed, make sure we
+				// continue to watch properly
+				if err := addWatch(certPath); err != nil {
+					log.Println("could not add watch:", err)
+				}
+			case err := <-watcher.Errors:
+				log.Println("error:", err)
+			}
+		}
+	}()
+	// watch the first certificate file
+	if err := addWatch(certPath); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (kpr *keypairReloader) tryReload() error {
+	newCert, err := tls.LoadX509KeyPair(kpr.certPath, kpr.keyPath)
+	if err != nil {
+		return err
+	}
+	kpr.certMu.Lock()
+	defer kpr.certMu.Unlock()
+	kpr.cert = &newCert
+	return nil
+}
+
+func (kpr *keypairReloader) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	kpr.certMu.RLock()
+	defer kpr.certMu.RUnlock()
+	return kpr.cert, nil
 }
 
 // TLS retrieves the TLS configuration, using the provided certificate
