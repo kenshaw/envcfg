@@ -64,6 +64,7 @@ type Envcfg struct {
 
 	envVarName string
 	configFile string
+	fileDir    string
 
 	envKey          string
 	hostKey         string
@@ -173,7 +174,14 @@ func (ec *Envcfg) GetKey(key string) string {
 				}
 
 			case "file":
-				if buf, err := ioutil.ReadFile(val); err == nil {
+				path := val
+				// If this is a relative path and a
+				// FileDir was given, use that as the
+				// base instead of the current dir.
+				if !filepath.IsAbs(path) && ec.fileDir != "" {
+					path = filepath.Join(ec.fileDir, path)
+				}
+				if buf, err := ioutil.ReadFile(path); err == nil {
 					val = string(buf)
 				}
 			}
