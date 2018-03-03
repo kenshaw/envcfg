@@ -18,14 +18,6 @@ func ConfigFile(path string) Option {
 	}
 }
 
-// FileDir is an option that sets the directory path from which relative
-// files will be read. The default is the current directory.
-func FileDir(path string) Option {
-	return func(ec *Envcfg) {
-		ec.fileDir = path
-	}
-}
-
 // KeyFilter is an option that adds a key filter.
 func KeyFilter(key string, f Filter) Option {
 	return func(ec *Envcfg) {
@@ -58,5 +50,12 @@ func PortKey(key string) Option {
 func CertPathKey(key string) Option {
 	return func(ec *Envcfg) {
 		ec.certPathKey = key
+	}
+}
+
+// FileEncodingPathKey is an option that sets the file encoding path key.
+func FileEncodingPathKey(key string) Option {
+	return func(ec *Envcfg) {
+		ec.fileEncodingPathKey = key
 	}
 }

@@ -17,11 +17,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/brankas/autocertdns"
-	"github.com/brankas/autocertdns/godop"
 	"github.com/fsnotify/fsnotify"
 	"github.com/knq/ini"
 	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/brankas/autocertdns"
+	"github.com/brankas/autocertdns/godop"
 )
 
 const (
@@ -47,6 +48,9 @@ const (
 
 	// DefaultCertProviderKey is the default server certificate provider key.
 	DefaultCertProviderKey = "server.certProvider"
+
+	// DefaultFileEncodingPathKey is the default server "file" encoding path key.
+	DefaultFileEncodingPathKey = "server.fileEncodingPath"
 )
 
 // CertificateProvider is the common interface for certificate providers.
@@ -64,13 +68,13 @@ type Envcfg struct {
 
 	envVarName string
 	configFile string
-	fileDir    string
 
-	envKey          string
-	hostKey         string
-	portKey         string
-	certPathKey     string
-	certProviderKey string
+	envKey              string
+	hostKey             string
+	portKey             string
+	certPathKey         string
+	certProviderKey     string
+	fileEncodingPathKey string
 
 	tls *tls.Config
 
@@ -85,14 +89,15 @@ func New(opts ...Option) (*Envcfg, error) {
 
 	// default values
 	ec := &Envcfg{
-		envVarName:      DefaultVarName,
-		configFile:      DefaultConfigFile,
-		envKey:          DefaultEnvKey,
-		hostKey:         DefaultHostKey,
-		portKey:         DefaultPortKey,
-		certPathKey:     DefaultCertPathKey,
-		certProviderKey: DefaultCertProviderKey,
-		filters:         make(map[string]Filter),
+		envVarName:          DefaultVarName,
+		configFile:          DefaultConfigFile,
+		envKey:              DefaultEnvKey,
+		hostKey:             DefaultHostKey,
+		portKey:             DefaultPortKey,
+		certPathKey:         DefaultCertPathKey,
+		certProviderKey:     DefaultCertProviderKey,
+		fileEncodingPathKey: DefaultFileEncodingPathKey,
+		filters:             make(map[string]Filter),
 	}
 
 	// apply options
@@ -174,14 +179,7 @@ func (ec *Envcfg) GetKey(key string) string {
 				}
 
 			case "file":
-				path := val
-				// If this is a relative path and a
-				// FileDir was given, use that as the
-				// base instead of the current dir.
-				if !filepath.IsAbs(path) && ec.fileDir != "" {
-					path = filepath.Join(ec.fileDir, path)
-				}
-				if buf, err := ioutil.ReadFile(path); err == nil {
+				if buf, err := ioutil.ReadFile(ec.FileEncodingPath(val)); err == nil {
 					val = string(buf)
 				}
 			}
@@ -281,6 +279,16 @@ func (ec *Envcfg) AutocertDNSManager(email string, provisioner autocertdns.Provi
 		CacheDir:    ec.CertPath(),
 		Provisioner: provisioner,
 	}
+}
+
+// FileEncodingPath returns the path as relative to the value taken from the
+// file encoding path key in the configuration. If path is an absolute path,
+// then it is returned.
+func (ec *Envcfg) FileEncodingPath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(ec.GetKey(ec.fileEncodingPathKey), path)
 }
 
 // CertProvider returns the configured certificate provider.
