@@ -95,10 +95,24 @@ creds="$GOOGLECREDS||env/gsa.json||file"         ; "file" encoded gsa credential
 b64value="$B64VALUE||e30K||base64"               ; "base64" encoded value
 ```
 
-## TODO
+### Certificate Providers
 
-* Fix certificate provider configuration issues
-* Add more DNS providers to autocertdns packages
+The following certificate providers are supported for `server.certProvider`:
+
+| Name   | Type                   | Example                                                                                    |
+|--------|------------------------|--------------------------------------------------------------------------------------------|
+| `auto` | LetsEncrypt TLS-SNI-01 | `auto`                                                                                     |
+| `disk` | Certificate on disk    | `disk:/path/to/cert.pem:/path/to/key.pem`                                                  |
+| `dns`  | LetsEncrypt DNS-01     | `dns:clouddns:mydomain.com:ken@example.com:my-managed-zone-name:/path/to/credentials.json` |
+
+#### LetsEncrypt DNS-01 Provider
+
+DNS certificate provider strings have a general form of `dns:<type>:<domain>:<email>:...`.
+
+| Type       | DNS Provider     | Parameters                                                              |
+|------------|------------------|-------------------------------------------------------------------------|
+| `godo`     | DigitalOcean DNS | `<type>:<domain>:<email>:<token>`                                       |
+| `clouddns` | Google Cloud DNS | `<type>:<domain>:<email>:<managed-zone-name>:/path/to/credentials.json` |
 
 [12-factor]: https://12factor.net
 [go-project]: https://golang.org/project

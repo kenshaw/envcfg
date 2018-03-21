@@ -22,6 +22,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/brankas/autocertdns"
+	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
 )
 
@@ -302,27 +303,55 @@ func (ec *Envcfg) CertProvider() CertificateProvider {
 	switch provider {
 	case "", "auto":
 		return ec.AutocertManager()
+
 	case "dns":
 		return ec.dnsCertProvider(params)
+
 	case "disk":
 		return ec.diskCertProvider(params)
+
 	default:
 		panic("unknown certificate provider type: " + provider)
 	}
 }
 
+// dnsCertProvider handles dns:... configs.
+//
+// General form is <type>:<domain>:<email address>:[param:[param]...]
 func (ec *Envcfg) dnsCertProvider(params []string) CertificateProvider {
-	// "typ:domain:email:token"
-	if len(params) < 4 {
-		panic("invalid certificate provider params")
+	if len(params) < 1 {
+		panic("invalid dns certificate provider params")
 	}
+
 	var provisioner autocertdns.Provisioner
 	switch params[0] {
+
+	// godo:mydomain.com:user@mydomain.com:abaoeusntahoustnhaou
 	case "godo", "godop", "do", "digitalocean":
+		if len(params) != 4 {
+			panic("invalid digitalocean dns certificate provider params")
+		}
+
 		var err error
 		provisioner, err = godop.New(
 			godop.Domain(params[1]),
 			godop.GodoClientToken(context.Background(), params[3]),
+		)
+		if err != nil {
+			panic(err)
+		}
+
+	// clouddns:mydomain.com:user@mydomain.com:managed-zone-name:/path/to/credentials.json
+	case "google", "gcdns", "gcdnsp", "gc", "googlecloud", "clouddns", "googleclouddns":
+		if len(params) != 5 {
+			panic("invalid google cloud dns certificate provider params")
+		}
+
+		var err error
+		provisioner, err = gcdnsp.New(
+			gcdnsp.Domain(params[1]),
+			gcdnsp.ManagedZone(params[3]),
+			gcdnsp.GoogleServiceAccountCredentialsFile(params[4]),
 		)
 		if err != nil {
 			panic(err)
