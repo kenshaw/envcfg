@@ -33,7 +33,7 @@ func main() {
 	// from environment
 	s := &http.Server{
 		Addr:      fmt.Sprintf("%s:%d", config.Host(), config.Port()),
-		TLSConfig: config.TLS(nil),
+		TLSConfig: config.TLS(),
 	}
 	log.Fatal(s.ListenAndServe())
 }
