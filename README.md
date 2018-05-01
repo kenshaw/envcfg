@@ -90,9 +90,9 @@ creds="$GOOGLECREDS||env/gsa.json||file"         ; "file" encoded gsa credential
                                                  ; relative to the current working directory
 
 [service "something"]
-key="$NAME||subdir/myfile||relfile"              ; "relfile" encoded file will be loaded to the original config file
-                                                 ; for example, if the config file was on disk at /etc/myapp then the
-                                                 ; /etc/myapp/subdir/myfile value would be loaded
+key="$NAME||subdir/myfile||relfile"              ; "relfile" encoded file will be loaded relative to the original config file
+                                                 ; for example, if the config file was on disk at /etc/myapp then
+                                                 ; the /etc/myapp/subdir/myfile value would be loaded
 
 [example]
 b64value="$B64VALUE||e30K||base64"               ; "base64" encoded value

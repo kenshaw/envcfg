@@ -102,6 +102,8 @@ type Envcfg struct {
 
 	logf func(string, ...interface{})
 	errf func(string, ...interface{})
+
+	once sync.Once
 }
 
 // New creates a new environment configuration loader.
@@ -372,8 +374,7 @@ func (ec *Envcfg) CertDelay() time.Duration {
 
 // TLS retrieves the TLS configuration for use by a server.
 func (ec *Envcfg) TLS() *tls.Config {
-	var once sync.Once
-	once.Do(func() {
+	ec.once.Do(func() {
 		// build cert provider
 		certProvider := ec.buildCertProvider()
 		ec.tls = &tls.Config{
