@@ -67,13 +67,6 @@ func CertDelayKey(key string) Option {
 	}
 }
 
-// FileEncodingPathKey is an option that sets the file encoding path key.
-func FileEncodingPathKey(key string) Option {
-	return func(ec *Envcfg) {
-		ec.fileEncodingPathKey = key
-	}
-}
-
 // Logf is an option that sets the log handler.
 func Logf(f func(string, ...interface{})) Option {
 	return func(ec *Envcfg) {

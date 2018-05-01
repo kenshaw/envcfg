@@ -84,12 +84,15 @@ host="$HOST||example.com"                        ; hostname
 port="$PORT||8443"                               ; port
 certs="$CERTS||./env/certs"                      ; certificate directory cache
 certProvider="dns:godo:<domain>:<email>:<token>" ; certificate provider
-fileEncodingPath="$FILEPATH||."                  ; path for loading "file" encoded values (for non-absolute paths only)
 
 [google]
-creds="$GOOGLECREDS||env/gsa.json||file"         ; "file" encoded gsa credentials
-                                                 ; since server.fileEncodingPath has been set,
-                                                 ; then the path will be ./env/gsa.json
+creds="$GOOGLECREDS||env/gsa.json||file"         ; "file" encoded gsa credentials loaded from disk,
+                                                 ; relative to the current working directory
+
+[service "something"]
+key="$NAME||subdir/myfile||relfile"              ; "relfile" encoded file will be loaded to the original config file
+                                                 ; for example, if the config file was on disk at /etc/myapp then the
+                                                 ; /etc/myapp/subdir/myfile value would be loaded
 
 [example]
 b64value="$B64VALUE||e30K||base64"               ; "base64" encoded value

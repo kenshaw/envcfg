@@ -20,6 +20,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/knq/ini"
+	"github.com/yookoala/realpath"
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/brankas/autocertdns"
@@ -52,9 +53,6 @@ const (
 
 	// DefaultCertDelayKey is the default server certificate delay key.
 	DefaultCertDelayKey = "server.certDelay"
-
-	// DefaultFileEncodingPathKey is the default server "file" encoding path key.
-	DefaultFileEncodingPathKey = "server.fileEncodingPath"
 
 	// DefaultConfigFile is the default file path to load the initial
 	// configuration data from.
@@ -89,14 +87,13 @@ type Envcfg struct {
 	envVarName string
 	configFile string
 
-	envKey              string
-	hostKey             string
-	portKey             string
-	certPathKey         string
-	certProviderKey     string
-	certWaitKey         string
-	certDelayKey        string
-	fileEncodingPathKey string
+	envKey          string
+	hostKey         string
+	portKey         string
+	certPathKey     string
+	certProviderKey string
+	certWaitKey     string
+	certDelayKey    string
 
 	tls          *tls.Config
 	certProvider CertificateProvider
@@ -105,8 +102,6 @@ type Envcfg struct {
 
 	logf func(string, ...interface{})
 	errf func(string, ...interface{})
-
-	sync.Mutex
 }
 
 // New creates a new environment configuration loader.
@@ -115,17 +110,16 @@ func New(opts ...Option) (*Envcfg, error) {
 
 	// default values
 	ec := &Envcfg{
-		envVarName:          DefaultVarName,
-		configFile:          DefaultConfigFile,
-		envKey:              DefaultEnvKey,
-		hostKey:             DefaultHostKey,
-		portKey:             DefaultPortKey,
-		certPathKey:         DefaultCertPathKey,
-		certProviderKey:     DefaultCertProviderKey,
-		certWaitKey:         DefaultCertWaitKey,
-		certDelayKey:        DefaultCertDelayKey,
-		fileEncodingPathKey: DefaultFileEncodingPathKey,
-		filters:             make(map[string]Filter),
+		envVarName:      DefaultVarName,
+		configFile:      DefaultConfigFile,
+		envKey:          DefaultEnvKey,
+		hostKey:         DefaultHostKey,
+		portKey:         DefaultPortKey,
+		certPathKey:     DefaultCertPathKey,
+		certProviderKey: DefaultCertProviderKey,
+		certWaitKey:     DefaultCertWaitKey,
+		certDelayKey:    DefaultCertDelayKey,
+		filters:         make(map[string]Filter),
 	}
 
 	// apply options
@@ -142,6 +136,10 @@ func New(opts ...Option) (*Envcfg, error) {
 			ec.config, err = ini.Load(bytes.NewReader(data))
 		}
 	} else {
+		ec.configFile, err = realpath.Realpath(ec.configFile)
+		if err != nil {
+			return nil, err
+		}
 		ec.config, err = ini.LoadFile(ec.configFile)
 	}
 	// ensure no err
@@ -215,7 +213,13 @@ func (ec *Envcfg) GetKey(key string) string {
 				}
 
 			case "file":
-				if buf, err := ioutil.ReadFile(ec.FileEncodingPath(val)); err == nil {
+				if buf, err := ioutil.ReadFile(val); err == nil {
+					val = string(buf)
+				}
+
+			case "relfile":
+				buf, err := ioutil.ReadFile(filepath.Join(filepath.Dir(ec.configFile), val))
+				if err == nil {
 					val = string(buf)
 				}
 			}
@@ -366,31 +370,16 @@ func (ec *Envcfg) CertDelay() time.Duration {
 	return DefaultCertDelay
 }
 
-// FileEncodingPath returns the path as relative to the value taken from the
-// file encoding path key in the configuration. If path is an absolute path,
-// then it is returned.
-func (ec *Envcfg) FileEncodingPath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(ec.GetKey(ec.fileEncodingPathKey), path)
-}
-
 // TLS retrieves the TLS configuration for use by a server.
 func (ec *Envcfg) TLS() *tls.Config {
-	ec.Lock()
-	defer ec.Unlock()
-
-	// build cert provider
-	if ec.certProvider == nil {
-		ec.certProvider = ec.buildCertProvider()
-	}
-
-	if ec.tls == nil {
+	var once sync.Once
+	once.Do(func() {
+		// build cert provider
+		certProvider := ec.buildCertProvider()
 		ec.tls = &tls.Config{
 			NextProtos:     []string{"h2", "http/1.1"},
 			ServerName:     ec.Host(),
-			GetCertificate: ec.certProvider.GetCertificate,
+			GetCertificate: certProvider.GetCertificate,
 
 			// qualys A+ settings
 			MinVersion:               tls.VersionTLS12,
@@ -404,8 +393,7 @@ func (ec *Envcfg) TLS() *tls.Config {
 				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 			},
 		}
-	}
-
+	})
 	return ec.tls
 }
 
@@ -527,11 +515,12 @@ func (ec *Envcfg) diskCertProvider(params []string) CertificateProvider {
 type diskCertProvider struct {
 	config *Envcfg
 
-	sync.RWMutex
 	cert *tls.Certificate
 
 	certPath string
 	keyPath  string
+
+	sync.RWMutex
 }
 
 // newDiskCertProvider creates a disk cert provider that watches dirPath for
