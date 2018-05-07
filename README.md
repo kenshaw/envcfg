@@ -61,9 +61,9 @@ Please see the [GoDoc][godoc-api] listing for a full API listing.
 
 ### Environment Variables
 
-By default, `envcfg` loads configuration data from the environment variable
-`APP_CONFIG`, and expects the value to be a [git config][git-config] style
-configuration file.
+By default, `envcfg` loads configuration data from the base64-encoded
+environment variable `APP_CONFIG`, and expects a [git config][git-config]
+style configuration file of sections, subsections, and keys.
 
 ### Config files and key data
 

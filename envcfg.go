@@ -139,10 +139,9 @@ func New(opts ...Option) (*Envcfg, error) {
 		}
 	} else {
 		ec.configFile, err = realpath.Realpath(ec.configFile)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			ec.config, err = ini.LoadFile(ec.configFile)
 		}
-		ec.config, err = ini.LoadFile(ec.configFile)
 	}
 	// ensure no err
 	if err != nil {
@@ -190,8 +189,9 @@ var nameRE = regexp.MustCompile(`(?i)^\$([a-z][a-z0-9_]*)$`)
 // decoded using the appropriate method.
 //
 // Current supported <encoding> parameters:
-//     base64 -- value should be base64 decoded
-//     file   -- value should be read from disk
+//     base64  -- value should be base64 decoded
+//     file    -- value should be read from disk
+//     relfile -- value should be read from a path on disk relative to the loaded file
 func (ec *Envcfg) GetKey(key string) string {
 	val := ec.config.GetKey(key)
 
