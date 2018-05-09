@@ -377,6 +377,11 @@ func (ec *Envcfg) TLS() *tls.Config {
 	ec.once.Do(func() {
 		// build cert provider
 		certProvider := ec.buildCertProvider()
+		if certProvider == nil {
+			return
+		}
+
+		// set tls config
 		ec.tls = &tls.Config{
 			NextProtos:     []string{"h2", "http/1.1"},
 			ServerName:     ec.Host(),
@@ -419,6 +424,9 @@ func (ec *Envcfg) buildCertProvider() CertificateProvider {
 
 	case "disk":
 		return ec.diskCertProvider(params)
+
+	case "none":
+		return nil
 
 	default:
 		panic("unknown certificate provider type: " + provider)
