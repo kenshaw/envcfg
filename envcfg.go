@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/knq/ini"
 	"github.com/yookoala/realpath"
 	"golang.org/x/crypto/acme/autocert"
@@ -28,7 +27,7 @@ import (
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
-	"github.com/brankas/connmux"
+	"github.com/brankas/netmux"
 	"github.com/brankas/sentinel"
 )
 
@@ -75,13 +74,10 @@ const (
 	DefaultCertDelay = 30 * time.Second
 )
 
-// CertificateProvider is the common interface for certificate providers.
-type CertificateProvider interface {
+// certProvider is the common interface for certificate providers.
+type certProvider interface {
 	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
-
-// Filter is a func type that modifies a key returned from the envcfg.
-type Filter func(*Envcfg, string) string
 
 // Envcfg handles loading configuration variables from system environment
 // variables or from an initial configuration file.
@@ -331,7 +327,7 @@ func (ec *Envcfg) PortString() string {
 }
 
 // CertPath retrieves the value for the server certificate path key.
-func (ec *Envcfg) CertPath() string {
+func (ec *Envcfg) certPath() string {
 	path := ec.GetKey(ec.certPathKey)
 	if path == "" {
 		path = DefaultCertPath
@@ -354,7 +350,7 @@ func (ec *Envcfg) CertPath() string {
 }
 
 // CertWait retrieves the certificate provider wait duration.
-func (ec *Envcfg) CertWait() time.Duration {
+func (ec *Envcfg) certWait() time.Duration {
 	if d := ec.GetDuration(ec.certWaitKey); d != 0 {
 		return d
 	}
@@ -362,24 +358,11 @@ func (ec *Envcfg) CertWait() time.Duration {
 }
 
 // CertDelay retrieves the certificate provider delay duration.
-func (ec *Envcfg) CertDelay() time.Duration {
+func (ec *Envcfg) certDelay() time.Duration {
 	if d := ec.GetDuration(ec.certDelayKey); d != 0 {
 		return d
 	}
 	return DefaultCertDelay
-}
-
-// Sentinel creates a server sentinel.
-func (ec *Envcfg) Sentinel(opts ...sentinel.Option) *sentinel.Sentinel {
-	ec.sentinelOnce.Do(func() {
-		var err error
-		ec.sentinel, err = sentinel.New(opts...)
-		if err != nil {
-			panic(err)
-		}
-	})
-
-	return ec.sentinel
 }
 
 // HTTP creates a standard HTTP server for the provided handler and registers
@@ -403,19 +386,19 @@ func (ec *Envcfg) HTTP(h http.Handler, opts ...sentinel.ServerOption) {
 	}
 
 	// mux connection
-	mux, err := s.ConnMux(l)
+	mux, err := s.Mux(l)
 	if err != nil {
 		panic(err)
 	}
 
 	// set ignore error
-	err = sentinel.Ignore(sentinel.IgnoreError(connmux.ErrListenerClosed))(s)
+	err = sentinel.Ignore(sentinel.IgnoreListenerClosed)(s)
 	if err != nil {
 		panic(err)
 	}
 
 	// create redirect server
-	err = s.HTTP(mux.Listen(connmux.HTTP1Fast()), http.RedirectHandler(
+	err = s.HTTP(mux.Listen(netmux.HTTP1Fast()), http.RedirectHandler(
 		"https://"+ec.Host()+":"+ec.PortString(),
 		http.StatusMovedPermanently,
 	))
@@ -428,6 +411,19 @@ func (ec *Envcfg) HTTP(h http.Handler, opts ...sentinel.ServerOption) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// Sentinel creates a server sentinel.
+func (ec *Envcfg) Sentinel(opts ...sentinel.Option) *sentinel.Sentinel {
+	ec.sentinelOnce.Do(func() {
+		var err error
+		ec.sentinel, err = sentinel.New(opts...)
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	return ec.sentinel
 }
 
 // TLS retrieves the TLS configuration for use by a server.
@@ -461,8 +457,8 @@ func (ec *Envcfg) TLS() *tls.Config {
 	return ec.tls
 }
 
-// buildCertProvider builds the CertificateProvider.
-func (ec *Envcfg) buildCertProvider() CertificateProvider {
+// buildCertProvider builds the certProvider.
+func (ec *Envcfg) buildCertProvider() certProvider {
 	provider := ec.GetKey(ec.certProviderKey)
 	var params []string
 	if i := strings.Index(provider, ":"); i != -1 {
@@ -474,7 +470,7 @@ func (ec *Envcfg) buildCertProvider() CertificateProvider {
 		return &autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
 			HostPolicy: autocert.HostWhitelist(ec.Host()),
-			Cache:      autocert.DirCache(ec.CertPath()),
+			Cache:      autocert.DirCache(ec.certPath()),
 		}
 
 	case "dns":
@@ -494,7 +490,7 @@ func (ec *Envcfg) buildCertProvider() CertificateProvider {
 // dnsCertProvider handles dns:... configs.
 //
 // General form is <type>:<domain>:<email address>:[param:[param]...]
-func (ec *Envcfg) dnsCertProvider(params []string) CertificateProvider {
+func (ec *Envcfg) dnsCertProvider(params []string) certProvider {
 	if len(params) < 3 {
 		panic("invalid dns certificate provider params")
 	}
@@ -529,8 +525,8 @@ func (ec *Envcfg) dnsCertProvider(params []string) CertificateProvider {
 			gcdnsp.Domain(params[1]),
 			gcdnsp.ManagedZone(params[3]),
 			gcdnsp.GoogleServiceAccountCredentialsFile(params[4]),
-			gcdnsp.PropagationWait(ec.CertWait()),
-			gcdnsp.ProvisionDelay(ec.CertDelay()),
+			gcdnsp.PropagationWait(ec.certWait()),
+			gcdnsp.ProvisionDelay(ec.certDelay()),
 			gcdnsp.Logf(ec.logf),
 			gcdnsp.Errorf(ec.errf),
 		)
@@ -546,7 +542,7 @@ func (ec *Envcfg) dnsCertProvider(params []string) CertificateProvider {
 		Prompt:      autocert.AcceptTOS,
 		Domain:      ec.Host(),
 		Email:       params[2],
-		CacheDir:    ec.CertPath(),
+		CacheDir:    ec.certPath(),
 		Provisioner: provisioner,
 		Logf:        ec.logf,
 	}
@@ -562,13 +558,13 @@ func (ec *Envcfg) dnsCertProvider(params []string) CertificateProvider {
 // pair stored on disk.
 //
 // Uses fsnotify to watch for changes to reload immediately.
-func (ec *Envcfg) diskCertProvider(params []string) CertificateProvider {
+func (ec *Envcfg) diskCertProvider(params []string) certProvider {
 	// "certname:keyname"
 	if len(params) < 2 {
 		panic("invalid certificate provider params")
 	}
 
-	dir := ec.CertPath()
+	dir := ec.certPath()
 	certPath, keyPath := filepath.Join(dir, params[0]), filepath.Join(dir, params[1])
 	dcp, err := newDiskCertProvider(certPath, keyPath, ec.logf, ec.errf)
 	if err != nil {
@@ -576,102 +572,4 @@ func (ec *Envcfg) diskCertProvider(params []string) CertificateProvider {
 	}
 
 	return dcp
-}
-
-// diskCertProvider provides a certificate provider that watches a local file.
-type diskCertProvider struct {
-	config *Envcfg
-
-	cert *tls.Certificate
-
-	certPath string
-	keyPath  string
-
-	sync.RWMutex
-}
-
-// newDiskCertProvider creates a disk cert provider that watches dirPath for
-// cert and key.
-func newDiskCertProvider(certPath, keyPath string, logf, errf func(string, ...interface{})) (*diskCertProvider, error) {
-	dcp := &diskCertProvider{
-		certPath: certPath,
-		keyPath:  keyPath,
-	}
-	if err := dcp.loadCertAndKey(); err != nil {
-		return nil, err
-	}
-
-	// create watcher
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
-	// don't close, as it runs forever
-	// defer watcher.Close()
-
-	addWatch := func(path string) error {
-		if err := watcher.Add(certPath); err != nil {
-			return err
-		}
-
-		// if this is a valid symlink, watch its target too
-		if path, err := filepath.EvalSymlinks(certPath); err == nil && path != certPath {
-			if err := watcher.Add(path); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	go func() {
-		for {
-			select {
-			case <-watcher.Events:
-				if err := dcp.loadCertAndKey(); err != nil {
-					errf("could not load cert and key: %v", err)
-				} else {
-					logf("loaded updated certificate")
-				}
-
-				// in case we're dealing with symlinks and the target changed,
-				// make sure we continue to watch properly
-				if err := addWatch(certPath); err != nil {
-					errf("could not add watch: %v", err)
-				}
-
-			case err := <-watcher.Errors:
-				errf("%v", err)
-			}
-		}
-	}()
-
-	// watch the first certificate file
-	if err := addWatch(certPath); err != nil {
-		return nil, err
-	}
-
-	return dcp, nil
-}
-
-// loadCertAndKey tries to load the cert and key from disk.
-func (dcp *diskCertProvider) loadCertAndKey() error {
-	cert, err := tls.LoadX509KeyPair(dcp.certPath, dcp.keyPath)
-	if err != nil {
-		return err
-	}
-
-	dcp.Lock()
-	defer dcp.Unlock()
-
-	dcp.cert = &cert
-	return nil
-}
-
-// GetCertificate satisfies the CertificateProvider interface.
-func (dcp *diskCertProvider) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	dcp.RLock()
-	defer dcp.RUnlock()
-
-	return dcp.cert, nil
 }
