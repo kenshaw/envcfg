@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,6 +28,8 @@ import (
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
+	"github.com/brankas/connmux"
+	"github.com/brankas/sentinel"
 )
 
 const (
@@ -95,15 +99,14 @@ type Envcfg struct {
 	certWaitKey     string
 	certDelayKey    string
 
-	tls          *tls.Config
-	certProvider CertificateProvider
+	sentinelOnce sync.Once
+	sentinel     *sentinel.Sentinel
 
-	filters map[string]Filter
+	tlsOnce sync.Once
+	tls     *tls.Config
 
 	logf func(string, ...interface{})
 	errf func(string, ...interface{})
-
-	once sync.Once
 }
 
 // New creates a new environment configuration loader.
@@ -121,7 +124,6 @@ func New(opts ...Option) (*Envcfg, error) {
 		certProviderKey: DefaultCertProviderKey,
 		certWaitKey:     DefaultCertWaitKey,
 		certDelayKey:    DefaultCertDelayKey,
-		filters:         make(map[string]Filter),
 	}
 
 	// apply options
@@ -226,11 +228,6 @@ func (ec *Envcfg) GetKey(key string) string {
 				}
 			}
 		}
-	}
-
-	// apply filter
-	if f, ok := ec.filters[key]; ok {
-		return f(ec, val)
 	}
 
 	return val
@@ -372,9 +369,70 @@ func (ec *Envcfg) CertDelay() time.Duration {
 	return DefaultCertDelay
 }
 
+// Sentinel creates a server sentinel.
+func (ec *Envcfg) Sentinel(opts ...sentinel.Option) *sentinel.Sentinel {
+	ec.sentinelOnce.Do(func() {
+		var err error
+		ec.sentinel, err = sentinel.New(opts...)
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	return ec.sentinel
+}
+
+// HTTP creates a standard HTTP server for the provided handler and registers
+// it on the server sentinel.
+func (ec *Envcfg) HTTP(h http.Handler, opts ...sentinel.ServerOption) {
+	s, tlsConfig := ec.Sentinel(), ec.TLS()
+
+	// listen
+	l, err := net.Listen("tcp", ":"+ec.PortString())
+	if err != nil {
+		panic(err)
+	}
+
+	// when tls is "none", then just listen on the primary port (no connection
+	// muxing)
+	if tlsConfig == nil {
+		if err = s.HTTP(l, h); err != nil {
+			panic(err)
+		}
+		return
+	}
+
+	// mux connection
+	mux, err := s.ConnMux(l)
+	if err != nil {
+		panic(err)
+	}
+
+	// set ignore error
+	err = sentinel.Ignore(sentinel.IgnoreError(connmux.ErrListenerClosed))(s)
+	if err != nil {
+		panic(err)
+	}
+
+	// create redirect server
+	err = s.HTTP(mux.Listen(connmux.HTTP1Fast()), http.RedirectHandler(
+		"https://"+ec.Host()+":"+ec.PortString(),
+		http.StatusMovedPermanently,
+	))
+	if err != nil {
+		panic(err)
+	}
+
+	// create server
+	err = s.HTTP(tls.NewListener(mux.Default, tlsConfig), h)
+	if err != nil {
+		panic(err)
+	}
+}
+
 // TLS retrieves the TLS configuration for use by a server.
 func (ec *Envcfg) TLS() *tls.Config {
-	ec.once.Do(func() {
+	ec.tlsOnce.Do(func() {
 		// build cert provider
 		certProvider := ec.buildCertProvider()
 		if certProvider == nil {
@@ -412,7 +470,7 @@ func (ec *Envcfg) buildCertProvider() CertificateProvider {
 	}
 
 	switch provider {
-	case "", "auto":
+	case "auto":
 		return &autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
 			HostPolicy: autocert.HostWhitelist(ec.Host()),
@@ -429,7 +487,7 @@ func (ec *Envcfg) buildCertProvider() CertificateProvider {
 		return nil
 
 	default:
-		panic("unknown certificate provider type: " + provider)
+		panic(fmt.Sprintf("unknown certificate provider type %q", provider))
 	}
 }
 
