@@ -237,6 +237,12 @@ func (ec *Envcfg) GetString(key string) string {
 	return ec.GetKey(key)
 }
 
+// GetBytes retrieves the value for the key from the environment or the
+// supplied configuration data, return it as a byte slice.
+func (ec *Envcfg) GetBytes(key string) []byte {
+	return []byte(ec.GetKey(key))
+}
+
 // GetBool retrieves the value for key from the environment, or the supplied
 // configuration data, returning it as a bool.
 func (ec *Envcfg) GetBool(key string) bool {
@@ -290,6 +296,12 @@ func (ec *Envcfg) MustKey(key string) string {
 		panic(fmt.Sprintf("key %s must be defined", key))
 	}
 	return val
+}
+
+// MustBytes returns the value for key (same as GetKey) but panics if the value
+// is empty.
+func (ec *Envcfg) MustBytes(key string) []byte {
+	return []byte(ec.MustKey(key))
 }
 
 // MustInt returns the value for key (same as GetInt) but panics if the key was
