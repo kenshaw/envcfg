@@ -18,13 +18,6 @@ func ConfigFile(path string) Option {
 	}
 }
 
-// KeyFilter is an option that adds a key filter.
-func KeyFilter(key string, f Filter) Option {
-	return func(ec *Envcfg) {
-		ec.filters[key] = f
-	}
-}
-
 // EnvKey is an option that sets the runtime environment key.
 func EnvKey(key string) Option {
 	return func(ec *Envcfg) {
