@@ -303,6 +303,28 @@ func (ec *Envcfg) MustInt(key string) int {
 	return i
 }
 
+// KeyExist checks if the key exists in the section, if it is found in the
+// section it returns true, else false 
+func (ec *Envcfg) KeyExist(sectionNameAndKey string) bool {
+	name, key := ec.config.NameSplitFunc(sectionNameAndKey)
+	section := ec.config.GetSection(name)
+	if section == nil {
+		return false
+	}
+
+	sectionKeys := section.Keys()
+	if len(sectionKeys) == 0 {
+		return false 
+	}
+
+	for _, sKey := range sectionKeys {
+		if strings.ToLower(key) == sKey {
+			return true
+		}
+	}
+	return false 
+}
+
 // Env retrieves the value for the runtime environment key.
 func (ec *Envcfg) Env() string {
 	if env := ec.GetKey(ec.envKey); env != "" {
