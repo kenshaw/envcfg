@@ -27,7 +27,6 @@ import (
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
-	"github.com/brankas/netmux"
 	"github.com/brankas/sentinel"
 )
 
@@ -367,8 +366,8 @@ func (ec *Envcfg) certDelay() time.Duration {
 
 // HTTP creates a standard HTTP server for the provided handler and registers
 // it on the server sentinel.
-func (ec *Envcfg) HTTP(h http.Handler, opts ...sentinel.ServerOption) {
-	s, tlsConfig := ec.Sentinel(), ec.TLS()
+func (ec *Envcfg) HTTP(h http.Handler, opts ...func(*http.Server) error) {
+	s := ec.Sentinel()
 
 	// listen
 	l, err := net.Listen("tcp", ":"+ec.PortString())
@@ -376,39 +375,7 @@ func (ec *Envcfg) HTTP(h http.Handler, opts ...sentinel.ServerOption) {
 		panic(err)
 	}
 
-	// when tls is "none", then just listen on the primary port (no connection
-	// muxing)
-	if tlsConfig == nil {
-		if err = s.HTTP(l, h); err != nil {
-			panic(err)
-		}
-		return
-	}
-
-	// mux connection
-	mux, err := s.Mux(l)
-	if err != nil {
-		panic(err)
-	}
-
-	// set ignore error
-	err = sentinel.Ignore(sentinel.IgnoreListenerClosed)(s)
-	if err != nil {
-		panic(err)
-	}
-
-	// create redirect server
-	err = s.HTTP(mux.Listen(netmux.HTTP1Fast()), http.RedirectHandler(
-		"https://"+ec.Host()+":"+ec.PortString(),
-		http.StatusMovedPermanently,
-	))
-	if err != nil {
-		panic(err)
-	}
-
-	// create server
-	err = s.HTTP(tls.NewListener(mux.Default, tlsConfig), h)
-	if err != nil {
+	if err = s.HTTP(l, h, opts...); err != nil {
 		panic(err)
 	}
 }
