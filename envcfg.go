@@ -20,14 +20,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/knq/ini"
-	"github.com/yookoala/realpath"
-	"golang.org/x/crypto/acme/autocert"
-
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
-	"github.com/brankas/sentinel"
+	"github.com/kenshaw/sentinel"
+	"github.com/knq/ini"
+	"github.com/yookoala/realpath"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -433,13 +432,6 @@ func (ec *Envcfg) buildCertProvider() certProvider {
 	}
 
 	switch provider {
-	case "auto":
-		return &autocert.Manager{
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(ec.Host()),
-			Cache:      autocert.DirCache(ec.certPath()),
-		}
-
 	case "dns":
 		return ec.dnsCertProvider(params)
 
