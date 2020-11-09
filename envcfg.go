@@ -23,8 +23,8 @@ import (
 	"github.com/brankas/autocertdns"
 	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
+	"github.com/kenshaw/ini"
 	"github.com/kenshaw/sentinel"
-	"github.com/knq/ini"
 	"github.com/yookoala/realpath"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -33,41 +33,29 @@ const (
 	// DefaultVarName is the default environment variable name to load the
 	// initial configuration data from.
 	DefaultVarName = "APP_CONFIG"
-
 	// DefaultEnvKey is the default runtime environment key.
 	DefaultEnvKey = "runtime.environment"
-
 	// DefaultHostKey is the default server hostname key.
 	DefaultHostKey = "server.host"
-
 	// DefaultPortKey is the default server port key.
 	DefaultPortKey = "server.port"
-
 	// DefaultCertPathKey is the default server certificate path key.
 	DefaultCertPathKey = "server.certs"
-
 	// DefaultCertProviderKey is the default server certificate provider key.
 	DefaultCertProviderKey = "server.certProvider"
-
 	// DefaultCertWaitKey is the default server certificate wait key.
 	DefaultCertWaitKey = "server.certWait"
-
 	// DefaultCertDelayKey is the default server certificate delay key.
 	DefaultCertDelayKey = "server.certDelay"
-
 	// DefaultConfigFile is the default file path to load the initial
 	// configuration data from.
 	DefaultConfigFile = "env/config"
-
 	// DefaultCertPath is the default certificate caching path.
 	DefaultCertPath = "env/certs"
-
 	// DefaultEnvironment is the default environment name.
 	DefaultEnvironment = "development"
-
 	// DefaultCertWait is the default certificate provider wait duration.
 	DefaultCertWait = 180 * time.Second
-
 	// DefaultCertDelay is the default certificate provider propagation delay.
 	DefaultCertDelay = 30 * time.Second
 )
@@ -80,11 +68,9 @@ type certProvider interface {
 // Envcfg handles loading configuration variables from system environment
 // variables or from an initial configuration file.
 type Envcfg struct {
-	config *ini.File
-
-	envVarName string
-	configFile string
-
+	config          *ini.File
+	envVarName      string
+	configFile      string
 	envKey          string
 	hostKey         string
 	portKey         string
@@ -92,21 +78,17 @@ type Envcfg struct {
 	certProviderKey string
 	certWaitKey     string
 	certDelayKey    string
-
-	sentinelOnce sync.Once
-	sentinel     *sentinel.Sentinel
-
-	tlsOnce sync.Once
-	tls     *tls.Config
-
-	logf func(string, ...interface{})
-	errf func(string, ...interface{})
+	sentinelOnce    sync.Once
+	sentinel        *sentinel.Sentinel
+	tlsOnce         sync.Once
+	tls             *tls.Config
+	logf            func(string, ...interface{})
+	errf            func(string, ...interface{})
 }
 
 // New creates a new environment configuration loader.
 func New(opts ...Option) (*Envcfg, error) {
 	var err error
-
 	// default values
 	ec := &Envcfg{
 		envVarName:      DefaultVarName,
@@ -119,12 +101,10 @@ func New(opts ...Option) (*Envcfg, error) {
 		certWaitKey:     DefaultCertWaitKey,
 		certDelayKey:    DefaultCertDelayKey,
 	}
-
 	// apply options
 	for _, o := range opts {
 		o(ec)
 	}
-
 	// load environment data from $ENV{$envVarName} or from file $configFile
 	if envdata := os.Getenv(ec.envVarName); envdata != "" {
 		// if the data is supplied in $ENV{$envVarName}, then base64 decode the data
@@ -143,7 +123,6 @@ func New(opts ...Option) (*Envcfg, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	// ensure log funcs always are set
 	if ec.logf == nil {
 		ec.logf = func(string, ...interface{}) {}
@@ -153,20 +132,16 @@ func New(opts ...Option) (*Envcfg, error) {
 			ec.logf("ERROR: "+s, v...)
 		}
 	}
-
 	// set git style config
 	ec.config.SectionNameFunc = ini.GitSectionNameFunc
 	ec.config.SectionManipFunc = ini.GitSectionManipFunc
 	ec.config.ValueManipFunc = func(val string) string {
 		val = strings.TrimSpace(val)
-
 		if str, err := strconv.Unquote(val); err == nil {
 			val = str
 		}
-
 		return val
 	}
-
 	return ec, nil
 }
 
@@ -190,31 +165,26 @@ var nameRE = regexp.MustCompile(`(?i)^\$([a-z][a-z0-9_]*)$`)
 //     relfile -- value should be read from a path on disk relative to the loaded file
 func (ec *Envcfg) GetKey(key string) string {
 	val := ec.config.GetKey(key)
-
 	m := strings.Split(val, "||")
 	if (len(m) == 2 || len(m) == 3) && nameRE.MatchString(m[0]) {
 		// config data has $NAME, so read $ENV{$NAME}
 		v := os.Getenv(m[0][1:])
-
 		// if empty value, use the default
 		if v == "" {
 			val = m[1]
 		} else {
 			val = v
 		}
-
 		if len(m) == 3 {
 			switch m[2] {
 			case "base64":
 				if buf, err := base64.StdEncoding.DecodeString(val); err == nil {
 					val = string(buf)
 				}
-
 			case "file":
 				if buf, err := ioutil.ReadFile(val); err == nil {
 					val = string(buf)
 				}
-
 			case "relfile":
 				buf, err := ioutil.ReadFile(filepath.Join(filepath.Dir(ec.configFile), val))
 				if err == nil {
@@ -223,7 +193,6 @@ func (ec *Envcfg) GetKey(key string) string {
 			}
 		}
 	}
-
 	return val
 }
 
@@ -330,7 +299,6 @@ func (ec *Envcfg) certPath() string {
 	if path == "" {
 		path = DefaultCertPath
 	}
-
 	// ensure the directory exists
 	fi, err := os.Stat(path)
 	switch {
@@ -343,7 +311,6 @@ func (ec *Envcfg) certPath() string {
 	case !fi.IsDir():
 		panic(fmt.Sprintf("%s must be a directory", path))
 	}
-
 	return path
 }
 
@@ -367,14 +334,12 @@ func (ec *Envcfg) certDelay() time.Duration {
 // it on the server sentinel.
 func (ec *Envcfg) HTTP(h http.Handler, opts ...func(*http.Server) error) {
 	s := ec.Sentinel()
-
 	// listen
 	l, err := net.Listen("tcp", ":"+ec.PortString())
 	if err != nil {
 		panic(err)
 	}
-
-	if err = s.HTTP(l, h, opts...); err != nil {
+	if err = s.ManageHTTP(l, h, opts...); err != nil {
 		panic(err)
 	}
 }
@@ -382,13 +347,8 @@ func (ec *Envcfg) HTTP(h http.Handler, opts ...func(*http.Server) error) {
 // Sentinel creates a server sentinel.
 func (ec *Envcfg) Sentinel(opts ...sentinel.Option) *sentinel.Sentinel {
 	ec.sentinelOnce.Do(func() {
-		var err error
-		ec.sentinel, err = sentinel.New(opts...)
-		if err != nil {
-			panic(err)
-		}
+		ec.sentinel = sentinel.New(opts...)
 	})
-
 	return ec.sentinel
 }
 
@@ -400,13 +360,11 @@ func (ec *Envcfg) TLS() *tls.Config {
 		if certProvider == nil {
 			return
 		}
-
 		// set tls config
 		ec.tls = &tls.Config{
 			NextProtos:     []string{"h2", "http/1.1"},
 			ServerName:     ec.Host(),
 			GetCertificate: certProvider.GetCertificate,
-
 			// qualys A+ settings
 			MinVersion:               tls.VersionTLS12,
 			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
@@ -430,17 +388,13 @@ func (ec *Envcfg) buildCertProvider() certProvider {
 	if i := strings.Index(provider, ":"); i != -1 {
 		provider, params = strings.TrimSpace(provider[:i]), strings.Split(provider[i+1:], ":")
 	}
-
 	switch provider {
 	case "dns":
 		return ec.dnsCertProvider(params)
-
 	case "disk":
 		return ec.diskCertProvider(params)
-
 	case "none":
 		return nil
-
 	default:
 		panic(fmt.Sprintf("unknown certificate provider type %q", provider))
 	}
@@ -453,16 +407,13 @@ func (ec *Envcfg) dnsCertProvider(params []string) certProvider {
 	if len(params) < 3 {
 		panic("invalid dns certificate provider params")
 	}
-
 	var provisioner autocertdns.Provisioner
 	switch params[0] {
-
 	// godo:mydomain.com:user@mydomain.com:abaoeusntahoustnhaou
 	case "godo", "godop", "do", "digitalocean":
 		if len(params) != 4 {
 			panic("invalid digitalocean dns certificate provider params")
 		}
-
 		var err error
 		provisioner, err = godop.New(
 			godop.Domain(params[1]),
@@ -472,13 +423,11 @@ func (ec *Envcfg) dnsCertProvider(params []string) certProvider {
 		if err != nil {
 			panic(err)
 		}
-
 	// clouddns:mydomain.com:user@mydomain.com:managed-zone-name:/path/to/credentials.json
 	case "google", "gcdns", "gcdnsp", "gc", "googlecloud", "clouddns", "googleclouddns":
 		if len(params) != 5 {
 			panic("invalid google cloud dns certificate provider params")
 		}
-
 		var err error
 		provisioner, err = gcdnsp.New(
 			gcdnsp.Domain(params[1]),
@@ -492,11 +441,9 @@ func (ec *Envcfg) dnsCertProvider(params []string) certProvider {
 		if err != nil {
 			panic(err)
 		}
-
 	default:
 		panic("invalid certificate provisioner type")
 	}
-
 	a := &autocertdns.Manager{
 		Prompt:      autocert.AcceptTOS,
 		Domain:      ec.Host(),
@@ -505,11 +452,9 @@ func (ec *Envcfg) dnsCertProvider(params []string) certProvider {
 		Provisioner: provisioner,
 		Logf:        ec.logf,
 	}
-
 	if err := a.Run(context.Background()); err != nil {
 		panic(fmt.Sprintf("could not provision: %v", err))
 	}
-
 	return a
 }
 
@@ -522,13 +467,11 @@ func (ec *Envcfg) diskCertProvider(params []string) certProvider {
 	if len(params) < 2 {
 		panic("invalid certificate provider params")
 	}
-
 	dir := ec.certPath()
 	certPath, keyPath := filepath.Join(dir, params[0]), filepath.Join(dir, params[1])
 	dcp, err := newDiskCertProvider(certPath, keyPath, ec.logf, ec.errf)
 	if err != nil {
 		panic(fmt.Sprintf("unable to load certificate and key from disk: %v", err))
 	}
-
 	return dcp
 }

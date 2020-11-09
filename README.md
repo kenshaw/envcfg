@@ -8,7 +8,7 @@ in adherence with [12-factor][12-factor] app principles.
 Install in the usual [Go][go-project] fashion:
 
 ```sh
-$ go get -u github.com/brankas/envcfg
+$ go get -u github.com/kenshaw/envcfg
 ```
 
 ## Using
@@ -24,7 +24,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/brankas/envcfg"
+	"github.com/kenshaw/envcfg"
 )
 
 func main() {
@@ -68,7 +68,7 @@ style configuration file of sections, subsections, and keys.
 ### Config files and key data
 
 Configuration data is stored in [git config][git-config] style configuration
-files, and uses the [github.com/knq/ini][knq-ini] package for parsing
+files, and uses the [github.com/kenshaw/ini][knq-ini] package for parsing
 configuration data.
 
 
@@ -119,6 +119,6 @@ DNS certificate provider strings have a general form of `dns:<type>:<domain>:<em
 
 [12-factor]: https://12factor.net
 [go-project]: https://golang.org/project
-[godoc-api]: https://godoc.org/github.com/brankas/envcfg
+[godoc-api]: https://godoc.org/github.com/kenshaw/envcfg
 [git-config]: https://git-scm.com/docs/git-config
-[knq-ini]: https://github.com/knq/ini
+[knq-ini]: https://github.com/kenshaw/ini
