@@ -10,8 +10,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,7 +22,6 @@ import (
 	"github.com/brankas/autocertdns/gcdnsp"
 	"github.com/brankas/autocertdns/godop"
 	"github.com/kenshaw/ini"
-	"github.com/kenshaw/sentinel"
 	"github.com/yookoala/realpath"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -78,8 +75,6 @@ type Envcfg struct {
 	certProviderKey string
 	certWaitKey     string
 	certDelayKey    string
-	sentinelOnce    sync.Once
-	sentinel        *sentinel.Sentinel
 	tlsOnce         sync.Once
 	tls             *tls.Config
 	logf            func(string, ...interface{})
@@ -328,28 +323,6 @@ func (ec *Envcfg) certDelay() time.Duration {
 		return d
 	}
 	return DefaultCertDelay
-}
-
-// HTTP creates a standard HTTP server for the provided handler and registers
-// it on the server sentinel.
-func (ec *Envcfg) HTTP(h http.Handler, opts ...func(*http.Server) error) {
-	s := ec.Sentinel()
-	// listen
-	l, err := net.Listen("tcp", ":"+ec.PortString())
-	if err != nil {
-		panic(err)
-	}
-	if err = s.ManageHTTP(l, h, opts...); err != nil {
-		panic(err)
-	}
-}
-
-// Sentinel creates a server sentinel.
-func (ec *Envcfg) Sentinel(opts ...sentinel.Option) *sentinel.Sentinel {
-	ec.sentinelOnce.Do(func() {
-		ec.sentinel = sentinel.New(opts...)
-	})
-	return ec.sentinel
 }
 
 // TLS retrieves the TLS configuration for use by a server.
